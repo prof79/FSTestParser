@@ -1,4 +1,5 @@
-﻿namespace TestParser.AssemblyInfo
+﻿//namespace TestParser.AssemblyInfo
+module AssemblyInfo
 
 open System.Resources
 open System.Reflection
