@@ -60,6 +60,35 @@ let (<&>) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'c>) : MyParser<'
 
 let empty xs = Some ((), xs)
 
+let rec repeat parser xs =
+    xs |> ((parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2)) |||
+           (empty >>> (fun _ -> [])))
+
+let repeat1 parser xs =
+    xs |> (parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2))
+
+type MyToken =
+    | Id of string
+    | Keyword of string
+    | Operator of string
+    | Integer of int
+
+let pspaces cs = repeat pspace cs
+
+let tokops cs = cs |> ((repeat1 ppunct) >>> fun cs -> Operator (implode cs))
+
+let tokinteger cs =
+    match cs |> (repeat1 pdigit) with
+    | Some (cs, rest) ->
+            let intval = cs
+                         |> List.map (fun c ->
+                                (Char.GetNumericValue(c) |> int) -
+                                (Char.GetNumericValue('0') |> int))
+                         |> List.fold (fun state i -> state * 10 + i) 0
+            Some (Integer intval, rest)
+
+    | None -> None
+
 
 type TestClass() = 
     member this.Hello = "F#"
