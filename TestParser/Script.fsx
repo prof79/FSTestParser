@@ -19,10 +19,10 @@ printfn "Combined test: %A" <| test_explode_implode "Abc blabla foo bar"
 |> explode
 |> List.map (fun c ->
         printfn "Checking: %A" c
-        printfn "Is letter: %A" <| is_letter c
-        printfn "Is digit:  %A" <| is_digit c
-        printfn "Is space:  %A" <| is_space c
-        printfn "Is punct:  %A" <| is_punct c)
+        printfn "Is letter: %A" <| isLetter c
+        printfn "Is digit:  %A" <| isDigit c
+        printfn "Is space:  %A" <| isSpace c
+        printfn "Is punct:  %A" <| isPunctuation c)
 
 
 //System.Console.ReadKey (true)

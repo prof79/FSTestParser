@@ -56,7 +56,7 @@ let parseDigit        = check isDigit
 let parseSpace        = check isSpace
 let parsePunctuation  = check isPunctuation
 
-let parseChar ch = check ((=) ch)
+let expect x = check ((=) x)
 
 (* OR combination of two parsers - either parser1 or parser 2 matches, or none *)
 let (|||) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'b>) : MyParser<'a, 'b> =
@@ -86,12 +86,14 @@ let (<&>) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'c>) : MyParser<'
    to a parser result with unit as the result and itself as the remainder. *)
 let empty xs : MyParserResult<'a, unit> = Some ((), xs)
 
-(* Repeat a parser zero or more times. ('parser*') *)
+(* Repeat a parser zero or more times. ('parser*')
+   Result (fst) is a list, eg. of chars. *)
 let rec repeat parser xs =
     xs |> ((parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2)) |||
            (empty >>> (fun _ -> [])))
 
-(* Repeat a parser one or more times. ('parser+') *)
+(* Repeat a parser one or more times. ('parser+')
+   Result (fst) is a list, eg. of chars. *)
 let repeat1 parser xs =
     xs |> (parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2))
 
@@ -106,14 +108,30 @@ type MyToken =
     | Id of string
     | Keyword of string
     | Operator of string
+    | Punctuation of string
     | Integer of int
 
 type MyTokenizer = MyParser<char, MyToken>
 
 type MyLexer = string list -> string -> MyToken list
 
-let tokOperators = (repeat1 parsePunctuation) >>> (implode >> Operator)
+let tokOperatorsOld = (repeat1 parsePunctuation) >>> (implode >> Operator)
 
+let tokOperators keywords cs =
+    match repeat1 parsePunctuation cs with
+    | Some (results, cs) ->  let candidates = keywords
+                                              |> List.map explode
+                                              |> List.filter (startsWith results)
+                             if List.isEmpty candidates then
+                                Some (Punctuation <| implode results, cs)
+                             else
+                                let keyword = candidates
+                                              |> List.maxBy List.length
+                                let remainder = results
+                                                |> List.skip (List.length keyword)
+                                Some (Keyword <| implode keyword, remainder @ cs)
+    | None -> None
+    
 let tokInteger =
     (repeat1 parseDigit) >>> fun ds -> ds
                                        |> List.map digitCharToInt
@@ -121,7 +139,7 @@ let tokInteger =
                                        |> Integer
 
 let tokIdentifier (keywords : string list) =
-    (parseLetter <&> repeat (parseLetter ||| parseDigit ||| parseChar '_'))
+    (parseLetter <&> repeat (parseLetter ||| parseDigit ||| expect '_'))
         >>> fun (res1, res2) -> let ident = res1 :: res2
                                 match keywords
                                       |> List.tryFind (fun kw -> kw = implode ident)
@@ -134,12 +152,38 @@ let lex keywords str =
     explode str
     (* ignore spaces then match elements of our mini-language *)
     |> (repeat (parseSpaces <&> (tokIdentifier keywords |||
-                                 tokOperators |||
+                                 tokOperators  keywords |||
                                  tokInteger)
             >>> snd))
 
 
 (* Parser/Evaluator *)
+
+type Term =
+    | Num of int
+    | Neg of Term
+    | Add of Term * Term
+    | Mul of Term * Term
+
+(* Operator to skip an operator, then continue parsing. *)
+let (.|) operator parser =
+    expect (Operator operator) <&> parser >>> snd
+
+(* Operator to skip an operator behind a parse expression. *)
+let (|.) parser operator =
+    parser <&> expect (Operator operator) >>> fst
+
+(* Make an expression optional to parse. ('[parser]') *)
+let optional parser =
+    (parser >>> Some) ||| (empty >>> fun () -> None)
+    (* fun () ... is a tricky one
+       because empty >>> None would infer a wrong type *)
+
+let rec arithmeticEval = function
+    | Num i -> i
+    | Neg a -> -(arithmeticEval a)
+    | Add (a, b) -> (arithmeticEval a) + (arithmeticEval b)
+    | Mul (a, b) -> (arithmeticEval a) * (arithmeticEval b)
 
 
 
