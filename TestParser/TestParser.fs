@@ -4,11 +4,7 @@ module TestParser
 
 open System
 
-(* Parser *)
-
-type MyParserResult<'a, 'b> = ('b * 'a list) option
-
-type MyParser<'a, 'b> = 'a list -> MyParserResult<'a, 'b>
+(* Helper Functions *)
 
 let explode (str : string) =
     str.ToCharArray()
@@ -16,56 +12,68 @@ let explode (str : string) =
 
 let implode (chars : char list) =
     chars
-    |> List.fold (fun state c -> state + c.ToString()) ""
+    |> List.fold (fun state ch -> state + ch.ToString()) ""
 
-let is_digit = Char.IsDigit
+let isDigit = Char.IsDigit
 
-let is_letter = Char.IsLetter
+let isLetter = Char.IsLetter
 
-let is_space ch =
+let isSpace ch =
     ch = ' ' || ch = '\r' || ch = '\n' || ch = '\t' || ch = '\v'
 
-let is_punct ch =
-    not <| is_digit ch &&
-    not <| is_letter ch &&
-    not <| is_space ch
+let isPunctuation ch =
+    not <| isDigit ch &&
+    not <| isLetter ch &&
+    not <| isSpace ch
 
-let digitchar2int ch =
+let digitCharToInt ch =
     (Char.GetNumericValue(ch) |> int) - (Char.GetNumericValue('0') |> int)
 
 (* Checks whether xs start with ss *)
-let rec starts_with xs ss =
+let rec startsWith xs ss =
     match xs, ss with
     | _, []  -> true
     | [], _  -> false
-    | x :: xs, s :: ss -> if x = s then starts_with xs ss else false
+    | x :: xs, s :: ss -> if x = s then startsWith xs ss else false
 
-let check pred : MyParser<'a, 'a> = function
-    | x :: xs when pred x -> Some (x, xs)
+
+(* Basic/Single Character Parsers *)
+
+type MyParserResult<'a, 'b> = ('b * 'a list) option
+
+type MyParser<'a, 'b> = 'a list -> MyParserResult<'a, 'b>
+
+let check predicate : MyParser<'a, 'a> = function
+    | x :: xs when predicate x -> Some (x, xs)
     | _ -> None
 
 //let alpha_parser : MyParser<char, char> = function
 //    | c :: cs when is_letter c -> Some (c, cs)
 //    | _ -> None
 
-let pletter = check is_letter
-let pdigit  = check is_digit
-let pspace  = check is_space
-let ppunct  = check is_punct
+let parseLetter       = check isLetter
+let parseDigit        = check isDigit
+let parseSpace        = check isSpace
+let parsePunctuation  = check isPunctuation
 
-let expect ch = check ((=) ch)
+let parseChar ch = check ((=) ch)
 
+(* OR combination of two parsers - either parser1 or parser 2 matches, or none *)
 let (|||) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'b>) : MyParser<'a, 'b> =
     fun xs ->
         match parser1 xs with
         | Some res -> Some res
         | None -> parser2 xs
 
+(* Result transformation combinator -
+   changes the result (first tuple element) of a parser *)
 let (>>>) (parser : MyParser<'a, 'b>) (f : 'b -> 'c) xs : MyParserResult<'a, 'c> =
     match parser xs with
     | Some (x, xs) -> Some (f x, xs)
     | None -> None
 
+(* AND combination of two parsers; both must match.
+   The result changes to a (nested) tuple of the results of all AND'ed parsers. *)
 let (<&>) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'c>) : MyParser<'a, 'b * 'c> =
     fun xs ->
         match parser1 xs with
@@ -74,17 +82,22 @@ let (<&>) (parser1 : MyParser<'a, 'b>) (parser2 : MyParser<'a, 'c>) : MyParser<'
                              | None -> None
         | None -> None
 
+(* Doesn't alter anything, transforms a list of to-parse symbols
+   to a parser result with unit as the result and itself as the remainder. *)
 let empty xs : MyParserResult<'a, unit> = Some ((), xs)
 
+(* Repeat a parser zero or more times. ('parser*') *)
 let rec repeat parser xs =
     xs |> ((parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2)) |||
            (empty >>> (fun _ -> [])))
 
+(* Repeat a parser one or more times. ('parser+') *)
 let repeat1 parser xs =
     xs |> (parser <&> (repeat parser) >>> (fun (res1, res2) -> res1 :: res2))
 
-(* Spaces are optional ("repeat" not "repeat1") *)
-let pspaces = repeat pspace
+(* Parse spaces. In this implementation they are optional
+   (thus "repeat" and not "repeat1"). *)
+let parseSpaces = repeat parseSpace
 
 
 (* Tokenizer/Lexer *)
@@ -99,16 +112,16 @@ type MyTokenizer = MyParser<char, MyToken>
 
 type MyLexer = string list -> string -> MyToken list
 
-let tokops = (repeat1 ppunct) >>> (implode >> Operator)
+let tokOperators = (repeat1 parsePunctuation) >>> (implode >> Operator)
 
-let tokinteger =
-    (repeat1 pdigit) >>> fun ds -> ds
-                                   |> List.map digitchar2int
-                                   |> List.fold (fun state i -> state * 10 + i) 0
-                                   |> Integer
+let tokInteger =
+    (repeat1 parseDigit) >>> fun ds -> ds
+                                       |> List.map digitCharToInt
+                                       |> List.fold (fun state i -> state * 10 + i) 0
+                                       |> Integer
 
-let tokidentifier (keywords : string list) =
-    (pletter <&> repeat (pletter ||| pdigit ||| expect '_'))
+let tokIdentifier (keywords : string list) =
+    (parseLetter <&> repeat (parseLetter ||| parseDigit ||| parseChar '_'))
         >>> fun (res1, res2) -> let ident = res1 :: res2
                                 match keywords
                                       |> List.tryFind (fun kw -> kw = implode ident)
@@ -117,12 +130,17 @@ let tokidentifier (keywords : string list) =
                                       | None -> Id <| implode ident
 
 let lex keywords str =
+    (* convert string input to character list *)
     explode str
-    (* ignore spaces *)
-    |> (repeat (pspaces <&> (tokidentifier keywords |||
-                             tokops |||
-                             tokinteger)
+    (* ignore spaces then match elements of our mini-language *)
+    |> (repeat (parseSpaces <&> (tokIdentifier keywords |||
+                                 tokOperators |||
+                                 tokInteger)
             >>> snd))
+
+
+(* Parser/Evaluator *)
+
 
 
 

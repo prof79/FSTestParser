@@ -14,6 +14,7 @@ let rec loop () =
         then ()
     else
         //eval input
+        printfn "%A" <| lex [] input
 
         printfn ""
 
