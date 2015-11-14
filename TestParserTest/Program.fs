@@ -6,6 +6,8 @@ open TestParser
 
 let readKey () = Console.ReadKey(true) |> ignore
 
+let keywords = ["("; ")"; "+"; "-"; "*"]
+
 let rec loop () =
 
     let input = Console.ReadLine()
@@ -13,8 +15,11 @@ let rec loop () =
     if input = "quit"
         then ()
     else
-        //eval input
-        printfn "%A" <| lex [] input
+        // eval input
+        match arithmeticTest keywords input with
+        | Some (terminals) -> printfn "%A" <| arithmeticEval terminals
+                              printfn "(Terminals: %A)" terminals
+        | None -> printfn "Couldn't parse your input."
 
         printfn ""
 
