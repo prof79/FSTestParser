@@ -44,6 +44,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Utility.fs" />
+    <Compile Include="Basic.fs" />
+    <Compile Include="Tokenizer.fs" />
     <Compile Include="TestParser.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>
